@@ -1,0 +1,72 @@
+ #4 Data Wrangling on Real Estate Market
+''' This shorter version covers column cleaning, missing values, merging, filtering, categorical encoding, aggregation, and outlier handling.'''
+import pandas as pd
+import os
+
+# Dataset folder
+folder = r"D:\B.E. practicals\RealEstate"
+
+# 1. Import dataset and clean column names
+df = pd.read_csv(os.path.join(folder, "RealEstate_Prices.csv"))
+df.columns = (df.columns.str.strip()
+              .str.lower()
+              .str.replace(r"[^a-z0-9]+", "_", regex=True)
+              .str.strip("_"))
+
+# 2. Convert data types
+df["sale_date"] = pd.to_datetime(df["sale_date"], errors="coerce")
+for col in ["area_sq_ft", "bedrooms", "bathrooms",
+            "year_built", "sale_price_inr",
+            "distance_to_school_km"]:
+    df[col] = pd.to_numeric(df[col], errors="coerce")
+
+# 3. Remove duplicates and handle missing values
+df.drop_duplicates(inplace=True)
+df["neighborhood"] = df["neighborhood"].str.strip().str.title()
+df["property_type"] = df["property_type"].str.strip().str.title()
+df["parking_available"] = df["parking_available"].str.strip().str.title()
+
+for col in ["area_sq_ft", "bedrooms", "bathrooms",
+            "year_built", "sale_price_inr",
+            "distance_to_school_km"]:
+    df[col] = df[col].fillna(df[col].median())
+
+for col in ["neighborhood", "property_type", "parking_available"]:
+    df[col] = df[col].fillna(df[col].mode()[0])
+
+df.dropna(subset=["sale_date"], inplace=True)
+
+# 4. Merge neighborhood information
+info = pd.read_csv(os.path.join(folder, "Neighborhood_Info.csv"))
+info.columns = (info.columns.str.strip().str.lower()
+                .str.replace(r"[^a-z0-9]+", "_", regex=True)
+                .str.strip("_"))
+info["neighborhood"] = info["neighborhood"].str.strip().str.title()
+df = df.merge(info, on="neighborhood", how="left")
+
+# 5. Filter properties sold from 2022 onward
+filtered = df[df["sale_date"].dt.year >= 2022].copy()
+
+# 6. Encode categorical variables
+encoded = pd.get_dummies(
+    filtered,
+    columns=["neighborhood", "property_type", "parking_available"],
+    dtype=int
+)
+
+# 7. Handle outliers using IQR capping
+col = "sale_price_inr"
+q1, q3 = filtered[col].quantile([0.25, 0.75])
+iqr = q3 - q1
+filtered[col] = filtered[col].clip(q1 - 1.5*iqr, q3 + 1.5*iqr)
+
+# 8. Aggregate average prices
+print(filtered.groupby("neighborhood")["sale_price_inr"].mean())
+print(filtered.groupby("property_type")["sale_price_inr"].mean())
+
+# 9. Export results
+df.to_csv(os.path.join(folder, "cleaned_realestate.csv"), index=False)
+filtered.to_csv(os.path.join(folder, "filtered_realestate.csv"), index=False)
+encoded.to_csv(os.path.join(folder, "encoded_realestate.csv"), index=False)
+
+print("Data wrangling completed!")
