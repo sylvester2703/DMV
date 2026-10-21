@@ -1,0 +1,164 @@
+# 1 Analyzing Sales Data from Multiple File Formats Dataset: Sales data in multiple file formats (e.g., CSV, Excel, JSON)
+import pandas as pd
+import os
+
+# ==================================================
+# STEP 1: SET THE DATASET FOLDER PATH
+# ==================================================
+folder = r"D:\B.E. practicals\SalesData"
+
+csv_file = os.path.join(folder, "sales_data.csv")
+excel_file = os.path.join(folder, "sales_data.xlsx")
+json_file = os.path.join(folder, "sales_data.json")
+
+# ==================================================
+# STEP 2: LOAD DATA FROM ALL THREE FORMATS
+# ==================================================
+csv_df = pd.read_csv(csv_file)
+excel_df = pd.read_excel(excel_file)
+json_df = pd.read_json(json_file)
+
+datasets = {
+    "CSV": csv_df,
+    "Excel": excel_df,
+    "JSON": json_df
+}
+
+print("DATA LOADING COMPLETED")
+
+# ==================================================
+# STEP 3: EXPLORE DATA AND IDENTIFY QUALITY ISSUES
+# ==================================================
+for name, data in datasets.items():
+    print(f"\n{'=' * 40}")
+    print(f"{name} DATA")
+    print(f"{'=' * 40}")
+
+    print("\nFirst five records:")
+    print(data.head())
+
+    print("\nDataset dimensions:", data.shape)
+
+    print("\nColumn names:")
+    print(data.columns.tolist())
+
+    print("\nData types:")
+    print(data.dtypes)
+
+    print("\nMissing values:")
+    print(data.isnull().sum())
+
+    print("\nDuplicate rows:", data.duplicated().sum())
+
+# ==================================================
+# STEP 4: CONVERT INTO A COMMON DATAFRAME
+# ==================================================
+# These files represent the same sales records in
+# different formats, so duplicate records are expected.
+
+df = pd.concat(datasets.values(), ignore_index=True)
+
+print("\nCombined shape before cleaning:", df.shape)
+
+# ==================================================
+# STEP 5: CLEAN COLUMN NAMES
+# ==================================================
+df.columns = df.columns.str.strip()
+
+# Remove rows that contain no data at all
+df.dropna(how="all", inplace=True)
+
+# Remove duplicate records across file formats
+df.drop_duplicates(inplace=True)
+
+# ==================================================
+# STEP 6: CLEAN TEXT AND STANDARDIZE VALUES
+# ==================================================
+text_columns = ["Product", "Category", "Region", "PaymentMethod"]
+
+for col in text_columns:
+    df[col] = df[col].astype("string").str.strip()
+
+# Standardize capitalization
+for col in ["Product", "Category", "Region", "PaymentMethod"]:
+    df[col] = df[col].str.title()
+
+# Replace blank strings with missing values
+df[text_columns] = df[text_columns].replace(r"^\s*$", pd.NA, regex=True)
+
+# ==================================================
+# STEP 7: CONVERT NUMERIC AND DATE COLUMNS
+# ==================================================
+df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce")
+df["UnitPrice"] = pd.to_numeric(df["UnitPrice"], errors="coerce")
+
+df["OrderDate"] = pd.to_datetime(
+    df["OrderDate"],
+    format="mixed",
+    dayfirst=True,
+    errors="coerce"
+)
+
+# ==================================================
+# STEP 8: HANDLE MISSING VALUES
+# ==================================================
+# Fill numeric missing values with column medians
+for col in ["Quantity", "UnitPrice"]:
+    if df[col].notna().any():
+        df[col] = df[col].fillna(df[col].median())
+
+# Fill categorical missing values with the mode
+for col in text_columns:
+    if df[col].notna().any():
+        df[col] = df[col].fillna(df[col].mode()[0])
+
+# Remove rows where essential identifiers or dates
+# remain missing after conversion
+df.dropna(subset=["OrderID", "OrderDate"], inplace=True)
+
+# Convert quantity to integer if all values are whole numbers
+if (df["Quantity"].dropna() % 1 == 0).all():
+    df["Quantity"] = df["Quantity"].astype("int64")
+
+# ==================================================
+# STEP 9: TRANSFORM DATA AND CALCULATE SALES
+# ==================================================
+df["Sales"] = df["Quantity"] * df["UnitPrice"]
+
+# ==================================================
+# STEP 10: ANALYZE CLEANED DATA
+# ==================================================
+print("\n" + "=" * 40)
+print("CLEANED AND UNIFIED SALES DATA")
+print("=" * 40)
+
+print("\nFirst five records:")
+print(df.head())
+
+print("\nDataset information:")
+df.info()
+
+print("\nStatistical summary:")
+print(df.describe(include="all"))
+
+print("\nMissing values after cleaning:")
+print(df.isnull().sum())
+
+print("\nDuplicate rows after cleaning:", df.duplicated().sum())
+
+print("\nTotal sales:", round(df["Sales"].sum(), 2))
+
+print("\nSales by product:")
+print(df.groupby("Product")["Sales"].sum().sort_values(ascending=False))
+
+print("\nSales by region:")
+print(df.groupby("Region")["Sales"].sum().sort_values(ascending=False))
+
+# ==================================================
+# STEP 11: SAVE THE UNIFIED DATASET
+# ==================================================
+output_file = os.path.join(folder, "cleaned_sales_data.csv")
+df.to_csv(output_file, index=False)
+
+print("\nFinal dataset shape:", df.shape)
+print("Unified dataset saved to:", output_file)
