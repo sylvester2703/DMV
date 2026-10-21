@@ -1,0 +1,272 @@
+
+#6 Analyzing Sales Performance by Region in a Retail Company
+# ============================================================
+# DATA AGGREGATION: RETAIL SALES PERFORMANCE BY REGION
+# ============================================================
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+
+# ============================================================
+# STEP 1: IMPORT DATASET
+# ============================================================
+
+folder = r"D:\B.E. practicals\Real_sales_data"
+file_path = os.path.join(folder, "Retail_Sales_Data.csv")
+
+df = pd.read_csv(file_path)
+
+print("FIRST FIVE RECORDS")
+print(df.head())
+
+print("\nDATASET SHAPE:", df.shape)
+
+print("\nCOLUMN NAMES")
+print(df.columns.tolist())
+
+print("\nDATA TYPES")
+print(df.dtypes)
+
+print("\nSTATISTICAL SUMMARY")
+print(df.describe(include="all"))
+
+print("\nMISSING VALUES")
+print(df.isnull().sum())
+
+print("\nDUPLICATE RECORDS:", df.duplicated().sum())
+
+# ============================================================
+# STEP 2: CLEAN DATA
+# ============================================================
+
+df.columns = df.columns.str.strip()
+
+df.drop_duplicates(inplace=True)
+
+df["Region"] = (
+    df["Region"].astype("string").str.strip().str.title()
+)
+
+df["Product Category"] = (
+    df["Product Category"]
+    .astype("string").str.strip().str.title()
+)
+
+df["Transaction Date"] = pd.to_datetime(
+    df["Transaction Date"], errors="coerce"
+)
+
+for col in ["Quantity Sold", "Unit Price", "Sales Amount"]:
+    df[col] = pd.to_numeric(df[col], errors="coerce")
+
+# Calculate missing sales amounts when quantity and unit price exist
+missing_sales = (
+    df["Sales Amount"].isna()
+    & df["Quantity Sold"].notna()
+    & df["Unit Price"].notna()
+)
+
+df.loc[missing_sales, "Sales Amount"] = (
+    df.loc[missing_sales, "Quantity Sold"]
+    * df.loc[missing_sales, "Unit Price"]
+)
+
+df.dropna(
+    subset=["Region", "Product Category", "Sales Amount"],
+    inplace=True
+)
+
+print("\nCLEANED DATA")
+print(df.head())
+
+# ============================================================
+# STEP 3: IDENTIFY RELEVANT VARIABLES
+# ============================================================
+
+print("\nVariables used for aggregation:")
+print("Region")
+print("Product Category")
+print("Sales Amount")
+print("Transaction Date")
+
+# ============================================================
+# STEP 4: AGGREGATE TOTAL SALES BY REGION
+# ============================================================
+
+region_sales = (
+    df.groupby("Region")["Sales Amount"]
+    .sum()
+    .sort_values(ascending=False)
+)
+
+print("\nTOTAL SALES BY REGION")
+print(region_sales)
+
+# ============================================================
+# STEP 5: BAR CHART OF REGIONAL SALES
+# ============================================================
+
+plt.figure(figsize=(9, 5))
+
+plt.bar(
+    region_sales.index,
+    region_sales.values,
+    label="Total Sales"
+)
+
+plt.title("Total Sales by Region")
+plt.xlabel("Region")
+plt.ylabel("Sales Amount")
+plt.legend()
+plt.grid(axis="y", alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# ============================================================
+# STEP 6: PIE CHART OF SALES DISTRIBUTION
+# ============================================================
+
+plt.figure(figsize=(7, 7))
+
+plt.pie(
+    region_sales.values,
+    labels=region_sales.index,
+    autopct="%1.1f%%",
+    startangle=90
+)
+
+plt.title("Regional Share of Total Sales")
+plt.tight_layout()
+plt.show()
+
+# ============================================================
+# STEP 7: IDENTIFY TOP-PERFORMING REGIONS
+# ============================================================
+
+print("\nREGIONS RANKED BY SALES")
+
+ranking = region_sales.reset_index()
+ranking.columns = ["Region", "Total Sales"]
+ranking.insert(0, "Rank", range(1, len(ranking) + 1))
+
+print(ranking)
+
+print("\nTOP-PERFORMING REGION")
+print(ranking.iloc[0])
+
+# ============================================================
+# STEP 8: AGGREGATE SALES BY REGION AND CATEGORY
+# ============================================================
+
+category_sales = pd.pivot_table(
+    df,
+    index="Region",
+    columns="Product Category",
+    values="Sales Amount",
+    aggfunc="sum",
+    fill_value=0
+)
+
+print("\nSALES BY REGION AND PRODUCT CATEGORY")
+print(category_sales)
+
+# ============================================================
+# STEP 9: STACKED BAR CHART
+# ============================================================
+
+category_sales.plot(
+    kind="bar",
+    stacked=True,
+    figsize=(10, 6)
+)
+
+plt.title("Stacked Sales by Region and Product Category")
+plt.xlabel("Region")
+plt.ylabel("Total Sales")
+plt.legend(title="Product Category")
+plt.grid(axis="y", alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# ============================================================
+# STEP 10: GROUPED BAR CHART
+# ============================================================
+
+category_sales.plot(
+    kind="bar",
+    stacked=False,
+    figsize=(10, 6)
+)
+
+plt.title("Category-wise Sales Comparison Across Regions")
+plt.xlabel("Region")
+plt.ylabel("Total Sales")
+plt.legend(title="Product Category")
+plt.grid(axis="y", alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# ============================================================
+# STEP 11: MONTHLY SALES AGGREGATION
+# ============================================================
+
+df["Month"] = df["Transaction Date"].dt.to_period("M").astype(str)
+
+monthly_sales = (
+    df.groupby("Month")["Sales Amount"]
+    .sum()
+    .sort_index()
+)
+
+print("\nMONTHLY SALES")
+print(monthly_sales)
+
+plt.figure(figsize=(11, 5))
+
+plt.plot(
+    monthly_sales.index,
+    monthly_sales.values,
+    marker="o",
+    label="Monthly Sales"
+)
+
+plt.title("Monthly Retail Sales Trend")
+plt.xlabel("Month")
+plt.ylabel("Total Sales")
+plt.xticks(rotation=45)
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# ============================================================
+# STEP 12: EXPORT RESULTS
+# ============================================================
+
+df.to_csv(
+    os.path.join(folder, "cleaned_retail_sales.csv"),
+    index=False
+)
+
+region_sales.to_csv(
+    os.path.join(folder, "region_sales_summary.csv"),
+    header=["Total Sales"]
+)
+
+category_sales.to_csv(
+    os.path.join(folder, "region_category_sales.csv")
+)
+
+ranking.to_csv(
+    os.path.join(folder, "regional_sales_ranking.csv"),
+    index=False
+)
+
+monthly_sales.to_csv(
+    os.path.join(folder, "monthly_sales_summary.csv"),
+    header=["Total Sales"]
+)
+
+print("\nDATA AGGREGATION COMPLETED SUCCESSFULLY")
+print("All output files saved in:", folder)
