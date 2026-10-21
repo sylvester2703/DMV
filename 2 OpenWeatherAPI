@@ -1,0 +1,129 @@
+#2 nalyzing Weather Data from OpenWeatherMap API
+# We’ll use the 5-day / 3-hour forecast API
+# %pip install requests pandas matplotlib seaborn folium
+import requests
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import folium
+import os
+
+# 1. API and folder settings
+API_KEY = "YOUR_API_KEY"
+folder = r"C:\Users\YourName\Desktop\WeatherData"
+os.makedirs(folder, exist_ok=True)
+
+# Pune coordinates
+params = {
+    "lat": 18.5204,
+    "lon": 73.8567,
+    "appid": API_KEY,
+    "units": "metric"
+}
+
+# 2. Retrieve weather forecast
+url = "https://api.openweathermap.org/data/2.5/forecast"
+response = requests.get(url, params=params, timeout=30)
+response.raise_for_status()
+data = response.json()
+
+# 3. Extract relevant attributes
+rows = []
+for item in data["list"]:
+    rows.append({
+        "DateTime": item["dt_txt"],
+        "Temperature": item["main"].get("temp"),
+        "Humidity": item["main"].get("humidity"),
+        "WindSpeed": item["wind"].get("speed"),
+        "Precipitation": item.get("rain", {}).get("3h", 0),
+        "Latitude": data["city"]["coord"]["lat"],
+        "Longitude": data["city"]["coord"]["lon"],
+        "City": data["city"]["name"]
+    })
+
+df = pd.DataFrame(rows)
+
+# 4. Clean and preprocess
+df["DateTime"] = pd.to_datetime(df["DateTime"], errors="coerce")
+for col in ["Temperature", "Humidity", "WindSpeed", "Precipitation"]:
+    df[col] = pd.to_numeric(df[col], errors="coerce")
+
+df.dropna(subset=["DateTime"], inplace=True)
+df.drop_duplicates(inplace=True)
+df["Precipitation"] = df["Precipitation"].fillna(0)
+
+# Fill remaining numeric missing values with column medians
+for col in ["Temperature", "Humidity", "WindSpeed"]:
+    if df[col].notna().any():
+        df[col] = df[col].fillna(df[col].median())
+
+# 5. Save dataset
+df.to_csv(os.path.join(folder, "weather_data.csv"), index=False)
+
+# 6. Statistical analysis
+print(df.head())
+print("\nWeather statistics:\n",
+      df[["Temperature", "Humidity", "WindSpeed", "Precipitation"]].describe())
+
+print("\nDaily average:")
+daily = df.set_index("DateTime").resample("D")[
+    ["Temperature", "Humidity", "WindSpeed", "Precipitation"]
+].mean()
+print(daily)
+
+print("\nMonthly average:")
+monthly = df.set_index("DateTime").resample("ME")[
+    ["Temperature", "Humidity", "WindSpeed", "Precipitation"]
+].mean()
+print(monthly)
+
+print("\nAverage temperature:", df["Temperature"].mean())
+print("Maximum temperature:", df["Temperature"].max())
+print("Minimum temperature:", df["Temperature"].min())
+
+# 7. Visualizations
+df.plot(x="DateTime", y="Temperature", kind="line",
+        title="Temperature Trend", marker="o")
+plt.ylabel("Temperature (°C)")
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
+df.plot(x="DateTime", y="Precipitation", kind="bar",
+        title="Precipitation Forecast")
+plt.ylabel("Rainfall (mm / 3 hours)")
+plt.tight_layout()
+plt.show()
+
+df.plot(x="DateTime", y="WindSpeed", kind="line",
+        title="Wind Speed Variation", marker="o")
+plt.ylabel("Wind Speed (m/s)")
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
+sns.heatmap(
+    df[["Temperature", "Humidity", "WindSpeed", "Precipitation"]].corr(),
+    annot=True, cmap="coolwarm", vmin=-1, vmax=1
+)
+plt.title("Weather Attribute Correlation")
+plt.show()
+
+plt.scatter(df["Temperature"], df["Humidity"])
+plt.xlabel("Temperature (°C)")
+plt.ylabel("Humidity (%)")
+plt.title("Temperature vs Humidity")
+plt.show()
+
+# 8. Geographic visualization
+m = folium.Map(location=[18.5204, 73.8567], zoom_start=10)
+folium.Marker(
+    [18.5204, 73.8567],
+    tooltip="Pune",
+    popup="OpenWeatherMap forecast location"
+).add_to(m)
+
+m.save(os.path.join(folder, "weather_map.html"))
+display(m)
+
+print("\nCSV and map saved successfully.")
