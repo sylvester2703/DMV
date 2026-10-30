@@ -1,164 +1,139 @@
-# 1 Analyzing Sales Data from Multiple File Formats Dataset: Sales data in multiple file formats (e.g., CSV, Excel, JSON)
+%pip install numpy pandas matplotlib scikit-learn seaborn scipy kneed nltk requests beautifulsoup4 biopython pydeseq2 openpyxl folium
+# Algorithm Step 1: Import libraries and load CSV, Excel and JSON files
 import pandas as pd
+import matplotlib.pyplot as plt
 import os
-
-# ==================================================
-# STEP 1: SET THE DATASET FOLDER PATH
-# ==================================================
-folder = r"D:\B.E. practicals\SalesData"
-
-csv_file = os.path.join(folder, "sales_data.csv")
-excel_file = os.path.join(folder, "sales_data.xlsx")
-json_file = os.path.join(folder, "sales_data.json")
-
-# ==================================================
-# STEP 2: LOAD DATA FROM ALL THREE FORMATS
-# ==================================================
-csv_df = pd.read_csv(csv_file)
-excel_df = pd.read_excel(excel_file)
-json_df = pd.read_json(json_file)
-
-datasets = {
-    "CSV": csv_df,
-    "Excel": excel_df,
-    "JSON": json_df
-}
-
+csv_df = pd.read_csv(r"C:\Users\Dell\OneDrive\Desktop\BE_Datasets\DMV\sales_data.csv")
+excel_df = pd.read_excel(r"C:\Users\Dell\OneDrive\Desktop\BE_Datasets\DMV\sales_data.xlsx")
+json_df = pd.read_json(r"C:\Users\Dell\OneDrive\Desktop\BE_Datasets\DMV\sales_data.json")
+datasets = {"CSV": csv_df, "Excel": excel_df, "JSON": json_df}
 print("DATA LOADING COMPLETED")
-
-# ==================================================
-# STEP 3: EXPLORE DATA AND IDENTIFY QUALITY ISSUES
-# ==================================================
+# Algorithm Step 2: Explore each dataset
 for name, data in datasets.items():
-    print(f"\n{'=' * 40}")
-    print(f"{name} DATA")
-    print(f"{'=' * 40}")
-
-    print("\nFirst five records:")
-    print(data.head())
-
+    print("\n" + "=" * 40)
+    print(name, "DATA")
+    print("=" * 40)
+    print("\nFirst five records:\n", data.head())
     print("\nDataset dimensions:", data.shape)
-
-    print("\nColumn names:")
-    print(data.columns.tolist())
-
-    print("\nData types:")
-    print(data.dtypes)
-
-    print("\nMissing values:")
-    print(data.isnull().sum())
-
+    print("\nColumn names:", data.columns.tolist())
+    print("\nData types:\n", data.dtypes)
+    print("\nMissing values:\n", data.isnull().sum())
     print("\nDuplicate rows:", data.duplicated().sum())
-
-# ==================================================
-# STEP 4: CONVERT INTO A COMMON DATAFRAME
-# ==================================================
-# These files represent the same sales records in
-# different formats, so duplicate records are expected.
-
+# Algorithm Step 3: Standardize column names and combine datasets
+# Handle common variations in column names across different files
+def standardize_columns(data):
+    data = data.copy()
+    data.columns = data.columns.str.strip()
+    rename_map = {
+        "Order_ID": "OrderID",
+        "Order Id": "OrderID",
+        "Date": "OrderDate",
+        "Order_Date": "OrderDate",
+        "Price": "UnitPrice",
+        "Unit Price": "UnitPrice"
+    }
+    return data.rename(columns=rename_map)
+datasets = {
+    name: standardize_columns(data)
+    for name, data in datasets.items()
+}
 df = pd.concat(datasets.values(), ignore_index=True)
-
 print("\nCombined shape before cleaning:", df.shape)
-
-# ==================================================
-# STEP 5: CLEAN COLUMN NAMES
-# ==================================================
+# Algorithm Step 4: Remove empty rows and duplicate records
 df.columns = df.columns.str.strip()
-
-# Remove rows that contain no data at all
 df.dropna(how="all", inplace=True)
-
-# Remove duplicate records across file formats
 df.drop_duplicates(inplace=True)
-
-# ==================================================
-# STEP 6: CLEAN TEXT AND STANDARDIZE VALUES
-# ==================================================
-text_columns = ["Product", "Category", "Region", "PaymentMethod"]
-
+# Check whether the essential columns are available
+required_columns = ["OrderID", "OrderDate", "Product",
+                    "Category", "Quantity", "UnitPrice", "Region"]
+missing_columns = [col for col in required_columns if col not in df.columns]
+if missing_columns:
+    raise ValueError(
+        f"Required columns missing: {missing_columns}. "
+        f"Available columns: {df.columns.tolist()}"
+    )
+# Standardize text columns that actually exist
+text_columns = [
+    col for col in ["Product", "Category", "Region",
+                    "Customer", "PaymentMethod"]
+    if col in df.columns
+]
 for col in text_columns:
-    df[col] = df[col].astype("string").str.strip()
-
-# Standardize capitalization
-for col in ["Product", "Category", "Region", "PaymentMethod"]:
-    df[col] = df[col].str.title()
-
-# Replace blank strings with missing values
-df[text_columns] = df[text_columns].replace(r"^\s*$", pd.NA, regex=True)
-
-# ==================================================
-# STEP 7: CONVERT NUMERIC AND DATE COLUMNS
-# ==================================================
-df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce")
-df["UnitPrice"] = pd.to_numeric(df["UnitPrice"], errors="coerce")
-
-df["OrderDate"] = pd.to_datetime(
-    df["OrderDate"],
-    format="mixed",
-    dayfirst=True,
-    errors="coerce"
-)
-
-# ==================================================
-# STEP 8: HANDLE MISSING VALUES
-# ==================================================
-# Fill numeric missing values with column medians
+    df[col] = df[col].astype("string").str.strip().str.title()
+    df[col] = df[col].replace(r"^\s*$", pd.NA, regex=True)
+# Convert numeric columns to valid numeric values
+for col in ["Quantity", "UnitPrice"]:
+    df[col] = pd.to_numeric(df[col], errors="coerce")
+# Convert dates into a consistent datetime format
+df["OrderDate"] = pd.to_datetime(df["OrderDate"], errors="coerce")
+# Fill missing numeric values using the median
 for col in ["Quantity", "UnitPrice"]:
     if df[col].notna().any():
         df[col] = df[col].fillna(df[col].median())
-
-# Fill categorical missing values with the mode
+# Fill missing text values using the most frequent value
 for col in text_columns:
     if df[col].notna().any():
         df[col] = df[col].fillna(df[col].mode()[0])
-
-# Remove rows where essential identifiers or dates
-# remain missing after conversion
+# Remove records with missing order IDs or invalid dates
 df.dropna(subset=["OrderID", "OrderDate"], inplace=True)
-
-# Convert quantity to integer if all values are whole numbers
-if (df["Quantity"].dropna() % 1 == 0).all():
+# Convert Quantity to integer if all values are whole numbers
+if df["Quantity"].notna().all() and (df["Quantity"] % 1 == 0).all():
     df["Quantity"] = df["Quantity"].astype("int64")
-
-# ==================================================
-# STEP 9: TRANSFORM DATA AND CALCULATE SALES
-# ==================================================
+# Algorithm Step 5: Calculate sales for each order
 df["Sales"] = df["Quantity"] * df["UnitPrice"]
-
-# ==================================================
-# STEP 10: ANALYZE CLEANED DATA
-# ==================================================
 print("\n" + "=" * 40)
 print("CLEANED AND UNIFIED SALES DATA")
 print("=" * 40)
-
-print("\nFirst five records:")
-print(df.head())
-
+print("\nFirst five records:\n", df.head())
 print("\nDataset information:")
 df.info()
-
-print("\nStatistical summary:")
-print(df.describe(include="all"))
-
-print("\nMissing values after cleaning:")
-print(df.isnull().sum())
-
+print("\nStatistical summary:\n", df.describe(include="all"))
+print("\nMissing values after cleaning:\n", df.isnull().sum())
 print("\nDuplicate rows after cleaning:", df.duplicated().sum())
+# Algorithm Step 6: Calculate total sales and group sales by product and region
+print("\nTotal Sales:", round(df["Sales"].sum(), 2))
 
-print("\nTotal sales:", round(df["Sales"].sum(), 2))
-
-print("\nSales by product:")
-print(df.groupby("Product")["Sales"].sum().sort_values(ascending=False))
-
-print("\nSales by region:")
-print(df.groupby("Region")["Sales"].sum().sort_values(ascending=False))
-
-# ==================================================
-# STEP 11: SAVE THE UNIFIED DATASET
-# ==================================================
-output_file = os.path.join(folder, "cleaned_sales_data.csv")
+product_sales = df.groupby("Product")["Sales"].sum().sort_values(
+    ascending=False
+)
+region_sales = df.groupby("Region")["Sales"].sum().sort_values(
+    ascending=False
+)
+print("\nSales by Product:\n", product_sales)
+print("\nSales by Region:\n", region_sales)
+# Algorithm Step 7: Visualize sales by product and region
+product_sales.plot(
+    kind="bar", title="Sales by Product",
+    xlabel="Product", ylabel="Total Sales"
+)
+plt.tight_layout()
+plt.show()
+region_sales.plot(
+    kind="bar", title="Sales by Region",
+    xlabel="Region", ylabel="Total Sales"
+)
+plt.tight_layout()
+plt.show()
+# Algorithm Step 8: Save the cleaned dataset as a CSV file
+# Saves in the current Jupyter Notebook working directory
+output_file = os.path.abspath("cleaned_sales_data.csv")
 df.to_csv(output_file, index=False)
-
 print("\nFinal dataset shape:", df.shape)
 print("Unified dataset saved to:", output_file)
+#Data Wrangling: collect, clean, transform, integrate, validation
+#Data Aggregation: Collect and combine data for summarized information, sum/mean/max/min
+#groupby(): divide record in groups based on one or more column to perform calculation
+#ARIMA: Autoregressive integrated moving average: Analyse and forecast time series data used past values and forecast error
+#eda: exploring data beofre applying ml or analysis: Load, understand, check quality, visualize, conclusions
+# OUTPUT EXPLANATION:
+# 1. DATA LOADING COMPLETED confirms all three files were loaded.
+# 2. The first five records and dimensions show the structure of each dataset.
+# 3. Missing-value and duplicate counts help identify data quality issues.
+# 4. Column names are standardized before combining the datasets.
+# 5. Empty rows and duplicate records are removed.
+# 6. Text fields are standardized, numeric fields are converted, and dates are parsed into datetime format.
+# 7. Missing quantities and prices are filled using their medians.Missing text values are filled using their most frequent values.
+# 8. The Sales column is calculated as Quantity multiplied by UnitPrice.
+# 9. Statistical summaries describe the cleaned data.
+# 10. Grouped totals and bar charts compare product-wise and region-wise sales.
+# 11. The final cleaned dataset is saved as cleaned_sales_data.csv.
