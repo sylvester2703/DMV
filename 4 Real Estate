@@ -1,72 +1,266 @@
- #4 Data Wrangling on Real Estate Market
-''' This shorter version covers column cleaning, missing values, merging, filtering, categorical encoding, aggregation, and outlier handling.'''
+%pip install numpy pandas matplotlib scikit-learn seaborn scipy kneed nltk requests beautifulsoup4 biopython pydeseq2 openpyxl folium
+# 1. Import required libraries
 import pandas as pd
-import os
-
-# Dataset folder
-folder = r"D:\B.E. practicals\RealEstate"
-
-# 1. Import dataset and clean column names
-df = pd.read_csv(os.path.join(folder, "RealEstate_Prices.csv"))
-df.columns = (df.columns.str.strip()
-              .str.lower()
-              .str.replace(r"[^a-z0-9]+", "_", regex=True)
-              .str.strip("_"))
-
-# 2. Convert data types
-df["sale_date"] = pd.to_datetime(df["sale_date"], errors="coerce")
-for col in ["area_sq_ft", "bedrooms", "bathrooms",
-            "year_built", "sale_price_inr",
-            "distance_to_school_km"]:
-    df[col] = pd.to_numeric(df[col], errors="coerce")
-
-# 3. Remove duplicates and handle missing values
+import numpy as np
+# 2. Load the real estate dataset using a direct file path
+df = pd.read_csv(r"C:\Users\Dell\OneDrive\Desktop\BE_Datasets\DMV\realestate_prices.csv")
+print("DATASET LOADED SUCCESSFULLY")
+print("\nFirst five records:")
+print(df.head())
+print("\nDataset shape:", df.shape)
+print("\nOriginal column names:")
+print(df.columns.tolist())
+print("\nData types:")
+print(df.dtypes)
+print("\nStatistical summary:")
+print(df.describe(include="all"))
+print("\nMissing values:")
+print(df.isnull().sum())
+print("\nDuplicate records:", df.duplicated().sum())
+# 3. Clean column names by removing spaces and special characters
+df.columns = (
+    df.columns.str.strip()
+    .str.lower()
+    .str.replace(r"[^a-z0-9]+", "_", regex=True)
+    .str.strip("_")
+)
+print("\nCleaned column names:")
+print(df.columns.tolist())
+# 4. Convert date and numeric columns to their correct data types
+if "date" in df.columns:
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+numeric_columns = [
+    "price", "bedrooms", "bathrooms", "sqft_living", "sqft_lot",
+    "floors", "waterfront", "view", "condition", "grade",
+    "sqft_above", "sqft_basement", "yr_built", "yr_renovated",
+    "zipcode", "lat", "long", "sqft_living15", "sqft_lot15"
+]
+for col in numeric_columns:
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+print("\nData types after conversion:")
+print(df.dtypes)
+# 5. Remove duplicate records
+print("\nDuplicates before removal:", df.duplicated().sum())
 df.drop_duplicates(inplace=True)
-df["neighborhood"] = df["neighborhood"].str.strip().str.title()
-df["property_type"] = df["property_type"].str.strip().str.title()
-df["parking_available"] = df["parking_available"].str.strip().str.title()
-
-for col in ["area_sq_ft", "bedrooms", "bathrooms",
-            "year_built", "sale_price_inr",
-            "distance_to_school_km"]:
-    df[col] = df[col].fillna(df[col].median())
-
-for col in ["neighborhood", "property_type", "parking_available"]:
-    df[col] = df[col].fillna(df[col].mode()[0])
-
-df.dropna(subset=["sale_date"], inplace=True)
-
-# 4. Merge neighborhood information
-info = pd.read_csv(os.path.join(folder, "Neighborhood_Info.csv"))
-info.columns = (info.columns.str.strip().str.lower()
-                .str.replace(r"[^a-z0-9]+", "_", regex=True)
-                .str.strip("_"))
-info["neighborhood"] = info["neighborhood"].str.strip().str.title()
-df = df.merge(info, on="neighborhood", how="left")
-
-# 5. Filter properties sold from 2022 onward
-filtered = df[df["sale_date"].dt.year >= 2022].copy()
-
-# 6. Encode categorical variables
-encoded = pd.get_dummies(
-    filtered,
-    columns=["neighborhood", "property_type", "parking_available"],
+df.reset_index(drop=True, inplace=True)
+print("Duplicates after removal:", df.duplicated().sum())
+# 6. Handle missing prices and dates, and remove invalid prices
+df.dropna(subset=["price", "date"], inplace=True)
+df = df[df["price"] > 0].copy()
+# Fill remaining numeric missing values with their median
+for col in df.select_dtypes(include=np.number).columns:
+    if df[col].notna().any():
+        df[col] = df[col].fillna(df[col].median())
+print("\nMissing values after treatment:")
+print(df.isnull().sum())
+print("\nShape after cleaning:", df.shape)
+# 7. Optionally merge neighborhood information using ZIP code
+# This step runs only if the additional dataset exists and has a ZIP code column
+try:
+    neighborhood_df = pd.read_csv(
+        r"C:\Users\Nidhi\Downloads\RealEstate\Neighborhood_Info.csv"
+    )
+    neighborhood_df.columns = (
+        neighborhood_df.columns.str.strip()
+        .str.lower()
+        .str.replace(r"[^a-z0-9]+", "_", regex=True)
+        .str.strip("_")
+    )
+    if "zipcode" in df.columns and "zipcode" in neighborhood_df.columns:
+        # Standardize ZIP codes before merging
+        df["zipcode"] = (
+            pd.to_numeric(df["zipcode"], errors="coerce")
+            .round().astype("Int64").astype("string")
+        )
+        neighborhood_df["zipcode"] = (
+            pd.to_numeric(neighborhood_df["zipcode"], errors="coerce")
+            .astype("Int64").astype("string")
+        )
+        # Keep one neighborhood record per ZIP code to avoid duplicate joins
+        neighborhood_df.dropna(subset=["zipcode"], inplace=True)
+        neighborhood_df.drop_duplicates(subset=["zipcode"], inplace=True)
+        # Merge the neighborhood data with the property data
+        df = df.merge(
+            neighborhood_df,
+            on="zipcode",
+            how="left",
+            suffixes=("", "_neighborhood"),
+            validate="many_to_one"
+        )
+        print("\nNeighborhood information merged successfully.")
+    else:
+        print("\nNo common ZIP code column found; merge skipped.")
+except FileNotFoundError:
+    print("\nNeighborhood_Info.csv not found; continuing without merging.")
+# 8. Filter and subset the real estate data
+sales_2015 = df[df["date"].dt.year == 2015].copy()
+three_bedroom_homes = df[df["bedrooms"] >= 3].copy()
+high_price_homes = df[df["price"] > 500000].copy()
+print("\nProperties sold in 2015:", len(sales_2015))
+print("Properties with at least three bedrooms:", len(three_bedroom_homes))
+print("Properties priced above $500,000:", len(high_price_homes))
+print("\nSample of 2015 sales:")
+print(sales_2015.head())
+# 9. Encode selected categorical variables using one-hot encoding
+encoded_df = df.copy()
+encoded_df["sale_year"] = encoded_df["date"].dt.year
+encoded_df["sale_month"] = encoded_df["date"].dt.month
+categorical_columns = [
+    col for col in ["waterfront", "view", "condition", "grade", "zipcode"]
+    if col in encoded_df.columns
+]
+for col in categorical_columns:
+    encoded_df[col] = encoded_df[col].astype("category")
+encoded_df = pd.get_dummies(
+    encoded_df,
+    columns=categorical_columns,
+    drop_first=True,
     dtype=int
 )
+print("\nDataset after categorical encoding:")
+print(encoded_df.head())
+print("\nEncoded dataset shape:", encoded_df.shape)
+# 10. Calculate price statistics by ZIP code
+price_by_zipcode = df.groupby(
+    "zipcode",
+    observed=True,
+    dropna=False
+).agg(
+    average_price=("price", "mean"),
+    median_price=("price", "median"),
+    minimum_price=("price", "min"),
+    maximum_price=("price", "max"),
+    property_count=("price", "count")
+).reset_index()
+price_by_zipcode.sort_values(
+    by="average_price",
+    ascending=False,
+    inplace=True
+)
+print("\nPrice statistics by ZIP code:")
+print(price_by_zipcode.head(10))
+# 11. Calculate price statistics by number of bedrooms
+price_by_bedrooms = df.groupby(
+    "bedrooms",
+    observed=True,
+    dropna=False
+).agg(
+    average_price=("price", "mean"),
+    median_price=("price", "median"),
+    property_count=("price", "count")
+).reset_index()
+print("\nPrice statistics by number of bedrooms:")
+print(price_by_bedrooms)
+# 12. Calculate price statistics by number of bathrooms
+price_by_bathrooms = df.groupby(
+    "bathrooms",
+    observed=True,
+    dropna=False
+).agg(
+    average_price=("price", "mean"),
+    average_living_area=("sqft_living", "mean"),
+    property_count=("price", "count")
+).reset_index()
+print("\nPrice statistics by number of bathrooms:")
+print(price_by_bathrooms.head(10))
+# 13. Identify and cap outliers only in continuous measurements
+# Keep discrete features such as bedrooms, floors, condition and grade unchanged
+outlier_columns = [
+    "price", "sqft_living", "sqft_lot",
+    "sqft_above", "sqft_basement"
+]
+df_wrangled = df.copy()
+print("\nOutlier counts before capping:")
+for col in outlier_columns:
+    if col in df_wrangled.columns and df_wrangled[col].notna().any():
+        q1 = df_wrangled[col].quantile(0.25)
+        q3 = df_wrangled[col].quantile(0.75)
+        iqr = q3 - q1
+        # Use nonnegative limits for prices and floor-area measurements
+        lower_limit = max(0, q1 - 1.5 * iqr)
+        upper_limit = q3 + 1.5 * iqr
+        outlier_count = (
+            (df_wrangled[col] < lower_limit) |
+            (df_wrangled[col] > upper_limit)
+        ).sum()
+        print(f"{col}: {outlier_count}")
+        # Cap extreme values without deleting property records
+        df_wrangled[col] = df_wrangled[col].clip(
+            lower=lower_limit,
+            upper=upper_limit
+        )
+print("\nSummary after outlier treatment:")
+print(df_wrangled[outlier_columns].describe())
+# 14. Save all output datasets using direct file paths
 
-# 7. Handle outliers using IQR capping
-col = "sale_price_inr"
-q1, q3 = filtered[col].quantile([0.25, 0.75])
-iqr = q3 - q1
-filtered[col] = filtered[col].clip(q1 - 1.5*iqr, q3 + 1.5*iqr)
+# Step 14: Save all output datasets in the existing dataset folder
 
-# 8. Aggregate average prices
-print(filtered.groupby("neighborhood")["sale_price_inr"].mean())
-print(filtered.groupby("property_type")["sale_price_inr"].mean())
+output_dir = r"C:\Users\Dell\OneDrive\Desktop\BE_Datasets\DMV"
 
-# 9. Export results
-df.to_csv(os.path.join(folder, "cleaned_realestate.csv"), index=False)
-filtered.to_csv(os.path.join(folder, "filtered_realestate.csv"), index=False)
-encoded.to_csv(os.path.join(folder, "encoded_realestate.csv"), index=False)
+df.to_csv(output_dir + r"\RealEstate_Cleaned.csv", index=False)
 
-print("Data wrangling completed!")
+encoded_df.to_csv(output_dir + r"\RealEstate_Encoded.csv", index=False)
+
+df_wrangled.to_csv(output_dir + r"\RealEstate_Wrangled.csv", index=False)
+
+sales_2015.to_csv(output_dir + r"\RealEstate_Sales_2015.csv", index=False)
+
+price_by_zipcode.to_csv(
+    output_dir + r"\Average_Price_By_Zipcode.csv", index=False
+)
+
+price_by_bedrooms.to_csv(
+    output_dir + r"\Average_Price_By_Bedrooms.csv", index=False
+)
+
+price_by_bathrooms.to_csv(
+    output_dir + r"\Average_Price_By_Bathrooms.csv", index=False
+)
+
+print("\nALL DATASETS SAVED SUCCESSFULLY")
+print("Output folder:", output_dir)
+print("1. RealEstate_Cleaned.csv")
+print("2. RealEstate_Encoded.csv")
+print("3. RealEstate_Wrangled.csv")
+print("4. RealEstate_Sales_2015.csv")
+print("5. Average_Price_By_Zipcode.csv")
+print("6. Average_Price_By_Bedrooms.csv")
+print("7. Average_Price_By_Bathrooms.csv")
+
+# 15. Display final results
+print("\nDATA WRANGLING COMPLETED SUCCESSFULLY")
+print("-" * 45)
+print("Cleaned dataset shape:", df.shape)
+print("Encoded dataset shape:", encoded_df.shape)
+print("Wrangled dataset shape:", df_wrangled.shape)
+print("Missing values in cleaned dataset:", df.isnull().sum().sum())
+print("Duplicate records remaining:", df.duplicated().sum())
+print("\nOutput files saved:")
+print("1. RealEstate_Cleaned.csv")
+print("2. RealEstate_Encoded.csv")
+print("3. RealEstate_Wrangled.csv")
+print("4. RealEstate_Sales_2015.csv")
+print("5. Average_Price_By_Zipcode.csv")
+print("6. Average_Price_By_Bedrooms.csv")
+print("7. Average_Price_By_Bathrooms.csv")
+print("\nFinal wrangled dataset preview:")
+print(df_wrangled.head())
+#Data Wrangling: collect, clean, transform, integrate, validation
+#Data Aggregation: Collect and combine data for summarized information, sum/mean/max/min
+#groupby(): divide record in groups based on one or more column to perform calculation
+#ARIMA: Autoregressive integrated moving average: Analyse and forecast time series data used past values and forecast error
+#eda: exploring data beofre applying ml or analysis: Load, understand, check quality, visualize, conclusions
+# OUTPUT EXPLANATION:
+# 1. The dataset summary shows its structure, columns, data types and missing values.
+# 2. Column names are standardized for easier processing.
+# 3. Dates and numeric fields are converted to appropriate data types.
+# 4. Duplicate records are removed and invalid prices or dates are excluded.
+# 5. Remaining numeric missing values are filled using their column medians.
+# 6. Neighborhood data is merged when the optional file is available.
+# 7. The dataset is filtered by sale year, bedroom count and price.
+# 8. Categorical variables are encoded into numerical indicator columns.
+# 9. Average, median, minimum and maximum prices are calculated by ZIP code.
+# 10. Price summaries are also calculated by bedroom and bathroom counts.
+# 11. IQR outliers are capped for selected continuous measurements.
+# 12. Cleaned, encoded, filtered, grouped and wrangled datasets are exported.
