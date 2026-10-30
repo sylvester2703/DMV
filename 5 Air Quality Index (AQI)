@@ -1,286 +1,143 @@
-#5 Analyzing Air Quality Index (AQI) Trends in a City
-# ============================================================
-# DATA VISUALIZATION USING MATPLOTLIB: AIR QUALITY ANALYSIS
-# ============================================================
-
+%pip install numpy pandas matplotlib scikit-learn seaborn scipy kneed nltk requests beautifulsoup4 biopython pydeseq2 openpyxl folium
+# 1. Import required libraries
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
-import os
-
-# ============================================================
-# STEP 1: LOAD DATASET
-# ============================================================
-
-folder = r"D:\B.E. practicals\CityAirQuality"
-file_path = os.path.join(folder, "City_Air_Quality.csv")
-
-df = pd.read_csv(file_path)
-
-print("FIRST FIVE RECORDS")
+# 2. Load the air quality dataset using a direct file path
+df = pd.read_csv(r"C:\Users\Dell\Downloads\AirQuality.csv")
+# 3. Explore the dataset
+print("DATASET LOADED SUCCESSFULLY")
+print("\nFirst five rows:")
 print(df.head())
-
-print("\nDATASET SHAPE:", df.shape)
-print("\nCOLUMN INFORMATION")
+print("\nDataset shape:", df.shape)
+print("\nColumn names:", df.columns.tolist())
+print("\nDataset information:")
 df.info()
-
-print("\nSTATISTICAL SUMMARY")
-print(df.describe())
-
-print("\nMISSING VALUES")
+print("\nStatistical summary:")
+print(df.describe(include="all"))
+print("\nMissing values:")
 print(df.isnull().sum())
-
-print("\nDUPLICATE RECORDS:", df.duplicated().sum())
-
-# ============================================================
-# STEP 2: DATA CLEANING AND PREPROCESSING
-# ============================================================
-
+# 4. Convert dates and filter data for the selected city
 df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-
-pollutants = ["PM2.5", "PM10", "CO", "NO2", "O3"]
-
-for col in pollutants + ["AQI"]:
-    df[col] = pd.to_numeric(df[col], errors="coerce")
-
-df.drop_duplicates(inplace=True)
-df.dropna(subset=["Date", "AQI"], inplace=True)
-
-for col in pollutants:
-    if df[col].notna().any():
-        df[col] = df[col].fillna(df[col].median())
-
-df.sort_values("Date", inplace=True)
-df.reset_index(drop=True, inplace=True)
-
-print("\nCLEANED DATA")
-print(df.head())
-print("\nMissing values after cleaning:")
-print(df.isnull().sum())
-
-# Identify relevant variables
-print("\nDate variable:", "Date")
-print("AQI variable:", "AQI")
-print("Pollutant variables:", pollutants)
-
-# ============================================================
-# STEP 3: OVERALL AQI TREND
-# ============================================================
-
-plt.figure(figsize=(12, 5))
-
-plt.plot(
-    df["Date"], df["AQI"],
-    color="blue", marker="o",
-    markersize=3, linewidth=1.5,
-    label="AQI"
-)
-
-plt.title("Daily Air Quality Index (AQI) Trend", fontsize=14)
-plt.xlabel("Date")
-plt.ylabel("AQI Value")
-plt.legend()
-plt.grid(True, linestyle="--", alpha=0.5)
-plt.xticks(rotation=45)
-plt.tight_layout()
-plt.show()
-
-# ============================================================
-# STEP 4: INDIVIDUAL POLLUTANT TRENDS
-# ============================================================
-
-fig, axes = plt.subplots(5, 1, figsize=(12, 14), sharex=True)
-
-for ax, pollutant in zip(axes, pollutants):
-    ax.plot(
-        df["Date"], df[pollutant],
-        marker=".", linewidth=1.3,
-        label=pollutant
+selected_city = "Amritsar"
+city_df = df[df["City"].str.strip().str.lower() == selected_city.lower()].copy()
+city_df["Date"] = pd.to_datetime(city_df["Date"], errors="coerce")
+if city_df.empty:
+    print("\nCity not found. Available cities:")
+    print(df["City"].dropna().unique())
+else:
+    # 5. Convert AQI and pollutant columns to numeric values
+    pollutants = ["PM2.5", "PM10", "CO"]
+    pollutants = [col for col in pollutants if col in city_df.columns]
+    for col in ["AQI"] + pollutants:
+        if col in city_df.columns:
+            city_df[col] = pd.to_numeric(city_df[col], errors="coerce")
+    city_df.dropna(subset=["Date"], inplace=True)
+    city_df.sort_values("Date", inplace=True)
+    # 6. Plot the overall daily AQI trend
+    aqi_data = city_df.dropna(subset=["AQI"])
+    plt.figure(figsize=(12, 5))
+    plt.plot(
+        aqi_data["Date"], aqi_data["AQI"],
+        color="blue", linewidth=1.5, label="Daily AQI"
     )
-    ax.set_title(f"{pollutant} Trend Over Time")
-    ax.set_ylabel(pollutant)
-    ax.legend(loc="upper right")
-    ax.grid(True, linestyle="--", alpha=0.4)
-
-axes[-1].set_xlabel("Date")
-
-plt.suptitle("Individual Pollutant Trends", fontsize=15)
-plt.tight_layout()
-plt.show()
-
-# ============================================================
-# STEP 5: BAR CHART OF AQI BY DATE
-# ============================================================
-
-# Display a sample of dates to keep the chart readable
-sample_df = df.tail(20)
-
-plt.figure(figsize=(12, 5))
-
-plt.bar(
-    sample_df["Date"].dt.strftime("%d-%b"),
-    sample_df["AQI"],
-    label="AQI"
-)
-
-plt.title("AQI Comparison Across Recent Dates")
-plt.xlabel("Date")
-plt.ylabel("AQI")
-plt.xticks(rotation=45)
-plt.legend()
-plt.grid(axis="y", alpha=0.4)
-plt.tight_layout()
-plt.show()
-
-# Monthly average AQI
-df["Month"] = df["Date"].dt.to_period("M").astype(str)
-
-monthly_aqi = df.groupby("Month")["AQI"].mean()
-
-plt.figure(figsize=(9, 5))
-plt.bar(
-    monthly_aqi.index,
-    monthly_aqi.values,
-    label="Average AQI"
-)
-
-plt.title("Monthly Average AQI")
-plt.xlabel("Month")
-plt.ylabel("Average AQI")
-plt.legend()
-plt.grid(axis="y", alpha=0.4)
-plt.tight_layout()
-plt.show()
-
-# ============================================================
-# STEP 6: BOX PLOT OF AQI DISTRIBUTION
-# ============================================================
-
-plt.figure(figsize=(7, 5))
-
-plt.boxplot(
-    df["AQI"].dropna(),
-    patch_artist=True,
-    showmeans=True
-)
-
-plt.title("Distribution of AQI Values")
-plt.ylabel("AQI")
-plt.xticks([1], ["AQI"])
-plt.grid(axis="y", linestyle="--", alpha=0.5)
-plt.tight_layout()
-plt.show()
-
-# ============================================================
-# STEP 7: CLASSIFY AQI INTO CATEGORIES
-# ============================================================
-
-# Common Indian AQI categories:
-# 0-50 Good, 51-100 Satisfactory,
-# 101-200 Moderate, 201-300 Poor,
-# 301-400 Very Poor, 401-500 Severe
-
-df["AQI_Category"] = pd.cut(
-    df["AQI"],
-    bins=[-1, 50, 100, 200, 300, 400, 500],
-    labels=[
-        "Good", "Satisfactory", "Moderate",
-        "Poor", "Very Poor", "Severe"
-    ]
-)
-
-print("\nAQI CATEGORY COUNTS")
-print(df["AQI_Category"].value_counts().sort_index())
-
-# Box plot of pollutant levels by AQI category
-# This compares pollutant distributions across AQI categories.
-fig, axes = plt.subplots(2, 3, figsize=(15, 9))
-axes = axes.flatten()
-
-for ax, pollutant in zip(axes, pollutants + ["AQI"]):
-    df.boxplot(
-        column=pollutant,
-        by="AQI_Category",
-        ax=ax,
-        rot=35
+    plt.title(f"Daily AQI Trend in {selected_city}")
+    plt.xlabel("Date")
+    plt.ylabel("Air Quality Index (AQI)")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.gcf().autofmt_xdate()
+    plt.tight_layout()
+    plt.show()
+    # 7. Plot each pollutant trend separately
+    for pollutant in pollutants:
+        pollutant_data = city_df.dropna(subset=[pollutant])
+        plt.figure(figsize=(12, 5))
+        plt.plot(
+            pollutant_data["Date"], pollutant_data[pollutant],
+            linewidth=1.2, label=pollutant
+        )
+        plt.title(f"{pollutant} Trend in {selected_city}")
+        plt.xlabel("Date")
+        plt.ylabel(f"{pollutant} Level")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.gcf().autofmt_xdate()
+        plt.tight_layout()
+        plt.show()
+    # 8. Calculate and plot monthly average AQI
+    monthly_data = city_df.dropna(subset=["AQI"]).copy()
+    monthly_data["YearMonth"] = monthly_data["Date"].dt.to_period("M")
+    monthly_aqi = monthly_data.groupby("YearMonth")["AQI"].mean()
+    plt.figure(figsize=(14, 6))
+    plt.bar(
+        monthly_aqi.index.astype(str),
+        monthly_aqi.values,
+        label="Average AQI"
     )
-    ax.set_title(f"{pollutant} by AQI Category")
-    ax.set_xlabel("AQI Category")
-    ax.set_ylabel(pollutant)
-
-plt.suptitle("Pollutant and AQI Distributions by Category")
-plt.tight_layout()
-plt.show()
-
-# ============================================================
-# STEP 8: SCATTER PLOTS OF AQI VS POLLUTANTS
-# ============================================================
-
-fig, axes = plt.subplots(2, 3, figsize=(14, 9))
-axes = axes.flatten()
-
-for ax, pollutant in zip(axes, pollutants):
-    ax.scatter(
-        df[pollutant], df["AQI"],
-        alpha=0.65, marker="o",
-        label=pollutant
-    )
-
-    ax.set_title(f"AQI vs {pollutant}")
-    ax.set_xlabel(f"{pollutant} Level")
-    ax.set_ylabel("AQI")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-
-axes[-1].axis("off")
-
-plt.suptitle("Relationship Between AQI and Pollutant Levels")
-plt.tight_layout()
-plt.show()
-
-# ============================================================
-# STEP 9: BUBBLE CHART
-# ============================================================
-
-plt.figure(figsize=(9, 6))
-
-plt.scatter(
-    df["PM2.5"],
-    df["AQI"],
-    s=df["PM10"].fillna(0) * 2,
-    c=df["CO"],
-    alpha=0.6,
-    cmap="viridis"
-)
-
-plt.colorbar(label="CO Level")
-plt.title("Bubble Chart: AQI vs PM2.5")
-plt.xlabel("PM2.5 Level")
-plt.ylabel("AQI")
-plt.grid(True, alpha=0.3)
-plt.tight_layout()
-plt.show()
-
-# ============================================================
-# STEP 10: FINAL SUMMARY
-# ============================================================
-
-print("\nAIR QUALITY SUMMARY")
-print("Average AQI:", round(df["AQI"].mean(), 2))
-print("Maximum AQI:", df["AQI"].max())
-print("Minimum AQI:", df["AQI"].min())
-
-print("\nAverage Pollutant Levels:")
-print(df[pollutants].mean())
-
-print("\nCorrelation with AQI:")
-print(df[pollutants + ["AQI"]].corr()["AQI"].sort_values(
-    ascending=False
-))
-
-# Export cleaned data
-output_path = os.path.join(folder, "cleaned_air_quality.csv")
-df.to_csv(output_path, index=False)
-
-print("\nCleaned dataset saved to:", output_path)
-print("All visualizations completed successfully.")
+    plt.title(f"Monthly Average AQI in {selected_city}")
+    plt.xlabel("Year-Month")
+    plt.ylabel("Average AQI")
+    plt.xticks(rotation=90)
+    plt.legend()
+    plt.grid(axis="y", alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+    # 9. Analyze AQI distribution by AQI category using a box plot
+    if "AQI_Bucket" in city_df.columns:
+        box_data = city_df.dropna(subset=["AQI", "AQI_Bucket"])
+        categories = sorted(box_data["AQI_Bucket"].unique())
+        values_by_category = [
+            box_data.loc[box_data["AQI_Bucket"] == category, "AQI"].values
+            for category in categories
+        ]
+        if categories:
+            plt.figure(figsize=(12, 6))
+            plt.boxplot(values_by_category, labels=categories)
+            plt.title(f"AQI Distribution by AQI Category in {selected_city}")
+            plt.xlabel("AQI Category")
+            plt.ylabel("Air Quality Index (AQI)")
+            plt.xticks(rotation=30)
+            plt.grid(axis="y", alpha=0.3)
+            plt.tight_layout()
+            plt.show()
+    # 10. Create scatter plots to compare AQI with each pollutant
+    for pollutant in pollutants:
+        scatter_data = city_df.dropna(subset=["AQI", pollutant])
+        plt.figure(figsize=(8, 5))
+        plt.scatter(
+            scatter_data[pollutant],
+            scatter_data["AQI"],
+            alpha=0.5,
+            label=pollutant
+        )
+        plt.title(f"AQI vs {pollutant} in {selected_city}")
+        plt.xlabel(f"{pollutant} Level")
+        plt.ylabel("Air Quality Index (AQI)")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.show()
+    # 11. Display AQI and pollutant statistics
+    print(f"\nAQI Summary for {selected_city}")
+    print(f"Average AQI: {city_df['AQI'].mean():.2f}")
+    print(f"Maximum AQI: {city_df['AQI'].max():.2f}")
+    print(f"Minimum AQI: {city_df['AQI'].min():.2f}")
+    print("\nAverage pollutant levels:")
+    print(city_df[pollutants].mean())
+    # 12. Calculate correlations between AQI and pollutant levels
+    print("\nCorrelation between AQI and pollutant levels:")
+    print(city_df[["AQI"] + pollutants].corr())
+# OUTPUT EXPLANATION:
+#Data Wrangling: collect, clean, transform, integrate, validation
+#Data Aggregation: Collect and combine data for summarized information, sum/mean/max/min
+#groupby(): divide record in groups based on one or more column to perform calculation
+#ARIMA: Autoregressive integrated moving average: Analyse and forecast time series data used past values and forecast error
+#eda: exploring data beofre applying ml or analysis: Load, understand, check quality, visualize, conclusions
+# 1. The dataset summary displays its structure, columns and missing values.
+# 2. The AQI line plot shows changes in air quality over time.
+# 3. Separate line plots show PM2.5, PM10 and CO trends.
+# 4. The bar chart compares average AQI across different months.
+# 5. The box plot shows AQI distribution across AQI categories.
+# 6. Scatter plots show the relationship between AQI and each pollutant.
+# 7. Average, maximum and minimum AQI values summarize air quality.
+# 8. The correlation table measures linear relationships between variables.
