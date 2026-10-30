@@ -1,24 +1,13 @@
-#3 Analyzing Customer Churn in a Telecommunications Company
-# ============================================================
-# DATA CLEANING AND PREPARATION: CUSTOMER CHURN
-# ============================================================
-
-import os
+%pip install numpy pandas matplotlib scikit-learn seaborn scipy kneed nltk requests beautifulsoup4 biopython pydeseq2 openpyxl folium
+# Algorithm Step 1: Import required libraries
 import pandas as pd
 import numpy as np
-
+import matplotlib.pyplot as plt
+import os
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-
-# ============================================================
-# STEP 1: LOAD DATASET
-# ============================================================
-
-folder = r"D:\B.E. practicals\TelecomChurn"
-file_path = os.path.join(folder, "Telecom_Customer_Churn.csv")
-
-df = pd.read_csv(file_path)
-
+# Algorithm Step 2: Load the dataset
+df = pd.read_csv(r"C:\Users\Dell\OneDrive\Desktop\BE_Datasets\DMV\telecom_customer_churn.csv")
 print("DATASET LOADED SUCCESSFULLY")
 print("\nFirst five records:\n", df.head())
 print("\nDataset shape:", df.shape)
@@ -27,250 +16,154 @@ print("\nData types:\n", df.dtypes)
 print("\nMissing values:\n", df.isnull().sum())
 print("\nDuplicate records:", df.duplicated().sum())
 print("\nStatistical summary:\n", df.describe(include="all"))
-
-# ============================================================
-# STEP 2: REMOVE DUPLICATE RECORDS
-# ============================================================
-
+# Algorithm Step 3: Standardize column names and text values
+df.columns = df.columns.str.strip()
+# Remove leading/trailing spaces and standardize text to lowercase
+for col in df.select_dtypes(include=["object"]).columns:
+    df[col] = df[col].map(
+        lambda x: x.strip().lower() if isinstance(x, str) else x
+    )
+# Algorithm Step 4: Remove duplicate records
 df.drop_duplicates(inplace=True)
 df.reset_index(drop=True, inplace=True)
-
-print("\nDuplicates after removal:", df.duplicated().sum())
-
-# ============================================================
-# STEP 3: STANDARDIZE COLUMN NAMES AND TEXT
-# ============================================================
-
-df.columns = df.columns.str.strip()
-
-# Clean whitespace in text columns
-for col in df.select_dtypes(include="object").columns:
-    df[col] = df[col].str.strip()
-
-# Standardize capitalization
-text_columns = [
-    "gender", "Partner", "Dependents", "PhoneService",
-    "InternetService", "Contract", "PaymentMethod", "Churn"
-]
-
-for col in text_columns:
-    if col in df.columns:
-        df[col] = df[col].str.lower()
-
-# Standardize known variations
-df["Contract"] = df["Contract"].replace({
-    "month to month": "month-to-month",
-    "month-to-month ": "month-to-month"
-})
-
-# ============================================================
-# STEP 4: CONVERT DATA TYPES
-# ============================================================
-
+print("\nDuplicate records after removal:", df.duplicated().sum())
+# Algorithm Step 5: Convert numeric columns to appropriate data types
 numeric_columns = [
     "SeniorCitizen", "tenure", "MonthlyCharges", "TotalCharges"
 ]
-
 for col in numeric_columns:
     if col in df.columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-
 print("\nData types after conversion:\n", df.dtypes)
-
-# ============================================================
-# STEP 5: HANDLE MISSING VALUES
-# ============================================================
-
-print("\nMissing values before treatment:\n", df.isnull().sum())
-
-# Remove rows without a usable target label
-df["Churn"] = df["Churn"].replace("", np.nan)
-df.dropna(subset=["Churn"], inplace=True)
-
-# Fill numerical missing values with medians
-for col in df.select_dtypes(include=np.number).columns:
-    if df[col].notna().any():
-        df[col] = df[col].fillna(df[col].median())
-
-# Fill categorical missing values with modes
-for col in df.select_dtypes(include="object").columns:
-    if df[col].notna().any():
-        df[col] = df[col].fillna(df[col].mode()[0])
-
-print("\nMissing values after treatment:\n", df.isnull().sum())
-
-# ============================================================
-# STEP 6: IDENTIFY AND HANDLE OUTLIERS
-# ============================================================
-
-outlier_columns = ["tenure", "MonthlyCharges", "TotalCharges"]
-
-print("\nOutliers detected using IQR:")
-
-for col in outlier_columns:
-    q1 = df[col].quantile(0.25)
-    q3 = df[col].quantile(0.75)
-    iqr = q3 - q1
-
-    lower_limit = q1 - 1.5 * iqr
-    upper_limit = q3 + 1.5 * iqr
-
-    count = ((df[col] < lower_limit) |
-             (df[col] > upper_limit)).sum()
-
-    print(f"{col}: {count}")
-
-    # Cap outliers instead of deleting customer records
-    df[col] = df[col].clip(
-        lower=lower_limit,
-        upper=upper_limit
-    )
-
-# ============================================================
-# STEP 7: FEATURE ENGINEERING
-# ============================================================
-
-# Categorize customers based on tenure
-df["TenureGroup"] = pd.cut(
+# Algorithm Step 6: Remove records with missing churn labels
+df = df[df["Churn"].isin(["yes", "no"])].copy()
+# Create target variable: Yes = 1, No = 0
+df["Churn"] = df["Churn"].map({"no": 0, "yes": 1}).astype(int)
+print("\nChurn distribution:\n", df["Churn"].value_counts())
+# Algorithm Step 7: Create additional customer features
+# Group customers according to their tenure
+df["Tenure Group"] = pd.cut(
     df["tenure"],
     bins=[-1, 12, 24, 48, float("inf")],
     labels=["New", "Medium", "Long", "Loyal"]
 )
-
-# Average monthly charge based on total charges and tenure
-df["AverageCharge"] = (
-    df["TotalCharges"] /
-    df["tenure"].replace(0, np.nan)
+# Calculate average charges per tenure month
+df["Average Charge Per Tenure Month"] = (
+    df["TotalCharges"] / df["tenure"].replace(0, np.nan)
 )
-
-df["AverageCharge"] = df["AverageCharge"].fillna(
-    df["MonthlyCharges"]
+# For zero-tenure or missing calculations, use MonthlyCharges
+df["Average Charge Per Tenure Month"] = (
+    df["Average Charge Per Tenure Month"].fillna(df["MonthlyCharges"])
 )
-
-# Total charges per month relative to monthly charges
-df["ChargeDifference"] = (
-    df["TotalCharges"] -
-    df["MonthlyCharges"] * df["tenure"]
-)
-
 print("\nNew features created:")
 print(df[[
-    "tenure", "TenureGroup",
-    "AverageCharge", "ChargeDifference"
+    "tenure", "Tenure Group",
+    "Average Charge Per Tenure Month"
 ]].head())
-
-# ============================================================
-# STEP 8: EXPORT CLEANED DATASET
-# ============================================================
-
-cleaned_path = os.path.join(folder, "cleaned_churn.csv")
-df.to_csv(cleaned_path, index=False)
-
-print("\nCleaned dataset saved:", cleaned_path)
-
-# ============================================================
-# STEP 9: PREPARE FEATURES AND TARGET
-# ============================================================
-
-# CustomerID is an identifier, not a predictive feature
+# Algorithm Step 8: Separate input features and target variable
+# Remove customer ID because it is an identifier, not a useful predictor
 X = df.drop(columns=["Churn", "customerID"], errors="ignore")
-
-# Convert churn to binary target
-y = df["Churn"].map({"no": 0, "yes": 1})
-
-# Remove rows if the target could not be mapped
-valid = y.notna()
-X = X.loc[valid]
-y = y.loc[valid].astype(int)
-
-# One-hot encode categorical features
-X = pd.get_dummies(
-    X,
-    drop_first=True,
-    dtype=int
-)
-
-# ============================================================
-# STEP 10: SPLIT INTO TRAINING AND TESTING SETS
-# ============================================================
-
+y = df["Churn"]
+# Split before fitting preprocessing steps to prevent data leakage
 X_train, X_test, y_train, y_test = train_test_split(
-    X,
-    y,
+    X, y,
     test_size=0.20,
     random_state=42,
     stratify=y
 )
-
 print("\nTraining samples:", X_train.shape[0])
 print("Testing samples:", X_test.shape[0])
-print("Training feature count:", X_train.shape[1])
-print("Testing feature count:", X_test.shape[1])
-
-# ============================================================
-# STEP 11: SCALE NUMERICAL FEATURES
-# ============================================================
-
-# Scale only continuous numerical features.
-# Binary encoded columns and the target remain unchanged.
-
-scale_columns = [
-    col for col in [
-        "tenure", "MonthlyCharges", "TotalCharges",
-        "AverageCharge", "ChargeDifference"
-    ] if col in X_train.columns
-]
-
+# Algorithm Step 9: Identify numeric and categorical columns
+num_cols = X_train.select_dtypes(include=np.number).columns.tolist()
+cat_cols = X_train.select_dtypes(
+    include=["object", "category", "string"]
+).columns.tolist()
+# Algorithm Step 10: Handle missing numeric values using training medians
+for col in num_cols:
+    median_value = X_train[col].median()
+    if pd.isna(median_value):
+        median_value = 0
+    X_train[col] = X_train[col].fillna(median_value)
+    X_test[col] = X_test[col].fillna(median_value)
+# Algorithm Step 11: Detect and cap numeric outliers using IQR
+for col in num_cols:
+    q1 = X_train[col].quantile(0.25)
+    q3 = X_train[col].quantile(0.75)
+    iqr = q3 - q1
+    lower_limit = q1 - 1.5 * iqr
+    upper_limit = q3 + 1.5 * iqr
+    X_train[col] = X_train[col].clip(lower_limit, upper_limit)
+    X_test[col] = X_test[col].clip(lower_limit, upper_limit)
+# Algorithm Step 12: Handle missing categorical values
+for col in cat_cols:
+    modes = X_train[col].mode()
+    fill_value = modes.iloc[0] if not modes.empty else "unknown"
+    X_train[col] = X_train[col].fillna(fill_value)
+    X_test[col] = X_test[col].fillna(fill_value)
+# Algorithm Step 13: Convert categorical features into numeric columns
+X_train = pd.get_dummies(X_train, drop_first=True, dtype=int)
+X_test = pd.get_dummies(X_test, drop_first=True, dtype=int)
+# Ensure training and testing have identical feature columns
+X_test = X_test.reindex(columns=X_train.columns, fill_value=0)
+# Algorithm Step 14: Standardize numeric features
+# Fit the scaler only on training data
+scale_cols = [col for col in num_cols if col in X_train.columns]
 scaler = StandardScaler()
-
-X_train = X_train.copy()
-X_test = X_test.copy()
-
-X_train.loc[:, scale_columns] = scaler.fit_transform(
-    X_train[scale_columns]
-)
-
-X_test.loc[:, scale_columns] = scaler.transform(
-    X_test[scale_columns]
-)
-
-# ============================================================
-# STEP 12: EXPORT TRAINING AND TESTING DATA
-# ============================================================
-
+if scale_cols:
+    X_train[scale_cols] = scaler.fit_transform(X_train[scale_cols])
+    X_test[scale_cols] = scaler.transform(X_test[scale_cols])
+print("\nNumber of input features:", X_train.shape[1])
+print("\nScaled training data:\n", X_train.head())
+print("\nScaled testing data:\n", X_test.head())
+# Algorithm Step 15: Combine features and target labels
 train_df = X_train.copy()
 train_df["Churn"] = y_train
-
 test_df = X_test.copy()
 test_df["Churn"] = y_test
-
-train_path = os.path.join(folder, "train_data.csv")
-test_path = os.path.join(folder, "test_data.csv")
-
+# Algorithm Step 16: Save all output datasets
+# Save files in a folder inside the current working directory
+output_dir = os.path.abspath("Telecom_churn")
+os.makedirs(output_dir, exist_ok=True)
+cleaned_path = os.path.join(output_dir, "cleaned_churn.csv")
+train_path = os.path.join(output_dir, "train_data.csv")
+test_path = os.path.join(output_dir, "test_data.csv")
+df.to_csv(cleaned_path, index=False)
 train_df.to_csv(train_path, index=False)
 test_df.to_csv(test_path, index=False)
-
-# ============================================================
-# STEP 13: FINAL VALIDATION
-# ============================================================
-
+# Algorithm Step 17: Display final results
 print("\nFINAL RESULTS")
-print("-" * 40)
-
+print("-" * 45)
 print("Cleaned dataset shape:", df.shape)
 print("Training dataset shape:", train_df.shape)
 print("Testing dataset shape:", test_df.shape)
-
-print("\nMissing values in cleaned dataset:",
-      df.isnull().sum().sum())
-
-print("Duplicate records in cleaned dataset:",
-      df.duplicated().sum())
-
-print("\nChurn distribution:")
-print(df["Churn"].value_counts())
-
-print("\nAll output files saved in:", folder)
-print("1. cleaned_churn.csv")
-print("2. train_data.csv")
-print("3. test_data.csv")
+print("Missing values in training data:", X_train.isnull().sum().sum())
+print("Missing values in testing data:", X_test.isnull().sum().sum())
+print("Duplicate records remaining:", df.duplicated().sum())
+print("\nTraining churn distribution:\n", y_train.value_counts())
+print("\nTesting churn distribution:\n", y_test.value_counts())
+print("\nAll output files saved successfully:")
+print("1.", cleaned_path)
+print("2.", train_path)
+print("3.", test_path)
+#Data Wrangling: collect, clean, transform, integrate, validation
+#Data Aggregation: Collect and combine data for summarized information, sum/mean/max/min
+#groupby(): divide record in groups based on one or more column to perform calculation
+#ARIMA: Autoregressive integrated moving average: Analyse and forecast time series data used past values and forecast error
+#eda: exploring data beofre applying ml or analysis: Load, understand, check quality, visualize, conclusions
+# OUTPUT EXPLANATION:
+# 1. Dataset loading displays the records, dimensions, columns and data types.
+# 2. Missing-value and duplicate counts help identify data quality issues.
+# 3. Text values are standardized and duplicate records are removed.
+# 4. Numeric columns are converted to numeric data types.
+# 5. Customers with invalid churn labels are removed.
+# 6. Churn is encoded as 1 for Yes and 0 for No.
+# 7. Tenure Group and Average Charge Per Tenure Month are engineered features.
+# 8. Customer ID is excluded from the model input features.
+# 9. Data is split into training and testing sets before preprocessing.
+# 10. Missing numeric values are filled using training-set medians.
+# 11. Outliers are capped using IQR limits calculated from training data.
+# 12. Missing categorical values are filled using training-set modes.
+# 13. Categorical features are converted into numerical dummy variables.
+# 14. Numeric features are standardized using training-set statistics.
+# 15. Training and testing datasets contain the processed features and labels.
+# 16. Three CSV files are saved in the Telecom_churn output folder.
