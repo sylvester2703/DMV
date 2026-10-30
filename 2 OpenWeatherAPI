@@ -1,129 +1,204 @@
-#2 nalyzing Weather Data from OpenWeatherMap API
-# We’ll use the 5-day / 3-hour forecast API
-# %pip install requests pandas matplotlib seaborn folium
+%pip install pandas matplotlib seaborn requests folium
+# 1. Import required libraries
 import requests
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import folium
-import os
-
-# 1. API and folder settings
-API_KEY = "YOUR_API_KEY"
-folder = r"C:\Users\YourName\Desktop\WeatherData"
-os.makedirs(folder, exist_ok=True)
-
-# Pune coordinates
+from IPython.display import display
+# 2. Enter the OpenWeatherMap API key and Pune coordinates
+API_KEY = "31686507054547074418a7c7c8a1e625"
 params = {
     "lat": 18.5204,
     "lon": 73.8567,
     "appid": API_KEY,
     "units": "metric"
 }
-
-# 2. Retrieve weather forecast
 url = "https://api.openweathermap.org/data/2.5/forecast"
-response = requests.get(url, params=params, timeout=30)
-response.raise_for_status()
-data = response.json()
-
-# 3. Extract relevant attributes
+# 3. Request weather forecast data directly from the API
+if API_KEY == "YOUR_NEW_API_KEY" or not API_KEY.strip():
+    raise ValueError("Enter your valid OpenWeatherMap API key.")
+try:
+    response = requests.get(url, params=params, timeout=30)
+    response.raise_for_status()
+    data = response.json()
+except requests.exceptions.HTTPError as e:
+    print("API request failed:", e)
+    print("Response:", response.text)
+    raise
+except requests.exceptions.RequestException as e:
+    print("API request failed:", e)
+    raise
+print("WEATHER DATA RETRIEVED SUCCESSFULLY")
+print("City:", data["city"]["name"])
+print("Forecast records received:", len(data["list"]))
+# 4. Extract relevant weather attributes from the API response
 rows = []
 for item in data["list"]:
     rows.append({
-        "DateTime": item["dt_txt"],
-        "Temperature": item["main"].get("temp"),
-        "Humidity": item["main"].get("humidity"),
-        "WindSpeed": item["wind"].get("speed"),
+        "DateTime": item.get("dt_txt"),
+        "Temperature": item.get("main", {}).get("temp"),
+        "Humidity": item.get("main", {}).get("humidity"),
+        "WindSpeed": item.get("wind", {}).get("speed"),
         "Precipitation": item.get("rain", {}).get("3h", 0),
         "Latitude": data["city"]["coord"]["lat"],
         "Longitude": data["city"]["coord"]["lon"],
         "City": data["city"]["name"]
     })
-
 df = pd.DataFrame(rows)
-
-# 4. Clean and preprocess
-df["DateTime"] = pd.to_datetime(df["DateTime"], errors="coerce")
-for col in ["Temperature", "Humidity", "WindSpeed", "Precipitation"]:
+# 5. Clean dates, numeric values and duplicate records
+df["DateTime"] = pd.to_datetime(
+    df["DateTime"], errors="coerce"
+)
+weather_columns = [
+    "Temperature", "Humidity", "WindSpeed", "Precipitation"
+]
+for col in weather_columns:
     df[col] = pd.to_numeric(df[col], errors="coerce")
-
+df.replace(
+    [float("inf"), float("-inf")],
+    float("nan"),
+    inplace=True
+)
 df.dropna(subset=["DateTime"], inplace=True)
 df.drop_duplicates(inplace=True)
+df.reset_index(drop=True, inplace=True)
+# Handle missing rainfall values
 df["Precipitation"] = df["Precipitation"].fillna(0)
-
-# Fill remaining numeric missing values with column medians
+# Fill missing measurements using their median
 for col in ["Temperature", "Humidity", "WindSpeed"]:
     if df[col].notna().any():
         df[col] = df[col].fillna(df[col].median())
-
-# 5. Save dataset
-df.to_csv(os.path.join(folder, "weather_data.csv"), index=False)
-
-# 6. Statistical analysis
-print(df.head())
-print("\nWeather statistics:\n",
-      df[["Temperature", "Humidity", "WindSpeed", "Precipitation"]].describe())
-
-print("\nDaily average:")
-daily = df.set_index("DateTime").resample("D")[
-    ["Temperature", "Humidity", "WindSpeed", "Precipitation"]
-].mean()
-print(daily)
-
-print("\nMonthly average:")
-monthly = df.set_index("DateTime").resample("ME")[
-    ["Temperature", "Humidity", "WindSpeed", "Precipitation"]
-].mean()
-print(monthly)
-
-print("\nAverage temperature:", df["Temperature"].mean())
-print("Maximum temperature:", df["Temperature"].max())
-print("Minimum temperature:", df["Temperature"].min())
-
-# 7. Visualizations
-df.plot(x="DateTime", y="Temperature", kind="line",
-        title="Temperature Trend", marker="o")
+# Remove rows with no usable weather measurements
+df.dropna(subset=weather_columns, how="all", inplace=True)
+df.reset_index(drop=True, inplace=True)
+print("\nFirst five records:\n", df.head())
+print("\nDataset shape:", df.shape)
+print("\nMissing values:\n", df.isnull().sum())
+print("\nDuplicate records:", df.duplicated().sum())
+# 6. Export the cleaned weather dataset using a direct file path
+df.to_csv(
+    r"C:\Users\Dell\OneDrive\Desktop\Resumes\weather_data.csv",
+    index=False
+)
+print("\nCleaned weather data saved successfully.")
+# 7. Calculate descriptive statistics and temperature measures
+print("\nWeather statistics:\n", df[weather_columns].describe())
+print(
+    "\nAverage temperature:",
+    round(df["Temperature"].mean(), 2), "°C"
+)
+print(
+    "Maximum temperature:",
+    round(df["Temperature"].max(), 2), "°C"
+)
+print(
+    "Minimum temperature:",
+    round(df["Temperature"].min(), 2), "°C"
+)
+# 8. Aggregate weather measurements by day
+daily = df.set_index("DateTime").resample("D").agg({
+    "Temperature": "mean",
+    "Humidity": "mean",
+    "WindSpeed": "mean",
+    "Precipitation": "sum"
+})
+print("\nDaily weather summary:\n", daily)
+# 9. Aggregate weather measurements by month
+monthly = df.set_index("DateTime").resample("ME").agg({
+    "Temperature": "mean",
+    "Humidity": "mean",
+    "WindSpeed": "mean",
+    "Precipitation": "sum"
+})
+print("\nMonthly weather summary:\n", monthly)
+# 10. Plot temperature changes over time
+df.plot(
+    x="DateTime",
+    y="Temperature",
+    kind="line",
+    marker="o",
+    title="Pune Temperature Forecast"
+)
 plt.ylabel("Temperature (°C)")
+plt.xlabel("Date and Time")
 plt.xticks(rotation=45)
 plt.tight_layout()
 plt.show()
-
-df.plot(x="DateTime", y="Precipitation", kind="bar",
-        title="Precipitation Forecast")
-plt.ylabel("Rainfall (mm / 3 hours)")
+# 11. Plot precipitation levels
+df.plot(
+    x="DateTime",
+    y="Precipitation",
+    kind="bar",
+    title="Forecast Precipitation"
+)
+plt.ylabel("Rainfall (mm per 3 hours)")
+plt.xlabel("Date and Time")
+plt.xticks(rotation=45)
 plt.tight_layout()
 plt.show()
-
-df.plot(x="DateTime", y="WindSpeed", kind="line",
-        title="Wind Speed Variation", marker="o")
+# 12. Plot wind speed variations
+df.plot(
+    x="DateTime",
+    y="WindSpeed",
+    kind="line",
+    marker="o",
+    title="Forecast Wind Speed"
+)
 plt.ylabel("Wind Speed (m/s)")
+plt.xlabel("Date and Time")
 plt.xticks(rotation=45)
 plt.tight_layout()
 plt.show()
-
+# 13. Visualize correlations between weather attributes
+plt.figure(figsize=(8, 5))
 sns.heatmap(
-    df[["Temperature", "Humidity", "WindSpeed", "Precipitation"]].corr(),
-    annot=True, cmap="coolwarm", vmin=-1, vmax=1
+    df[weather_columns].corr(),
+    annot=True,
+    cmap="coolwarm",
+    vmin=-1,
+    vmax=1
 )
 plt.title("Weather Attribute Correlation")
+plt.tight_layout()
 plt.show()
-
+# 14. Plot the relationship between temperature and humidity
+plt.figure(figsize=(7, 5))
 plt.scatter(df["Temperature"], df["Humidity"])
 plt.xlabel("Temperature (°C)")
 plt.ylabel("Humidity (%)")
 plt.title("Temperature vs Humidity")
+plt.tight_layout()
 plt.show()
-
-# 8. Geographic visualization
-m = folium.Map(location=[18.5204, 73.8567], zoom_start=10)
+# 15. Create a geographical map of the forecast location
+m = folium.Map(
+    location=[18.5204, 73.8567],
+    zoom_start=10
+)
 folium.Marker(
     [18.5204, 73.8567],
     tooltip="Pune",
     popup="OpenWeatherMap forecast location"
 ).add_to(m)
-
-m.save(os.path.join(folder, "weather_map.html"))
+m.save(
+    r"C:\Users\Dell\OneDrive\Desktop\Resumes\weather_map.html"
+)
 display(m)
-
-print("\nCSV and map saved successfully.")
+print("\nWeather map saved successfully.")
+#Data Wrangling: collect, clean, transform, integrate, validation
+#Data Aggregation: Collect and combine data for summarized information, sum/mean/max/min
+#groupby(): divide record in groups based on one or more column to perform calculation
+#ARIMA: Autoregressive integrated moving average: Analyse and forecast time series data used past values and forecast error
+#eda: exploring data beofre applying ml or analysis: Load, understand, check quality, visualize, conclusions
+# FINAL OUTPUT EXPLANATION:
+# 1. Forecast data is fetched directly from the OpenWeatherMap API.
+# 2. No pre-existing weather dataset is required.
+# 3. JSON data is converted into a Pandas DataFrame.
+# 4. Missing values, invalid dates and duplicate records are handled.
+# 5. Descriptive statistics summarize the weather measurements.
+# 6. Daily and monthly summaries aggregate forecast measurements.
+# 7. Line and bar charts visualize temperature, rainfall and wind speed.
+# 8. The heatmap shows correlations among weather attributes.
+# 9. The scatter plot shows the relationship between temperature and humidity.
+# 10. The Folium map marks the geographical location of Pune.
+# 11. CSV and HTML files are saved at the specified file paths.
